@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Lewis Structure Builder</title>
+  <link rel="stylesheet" href="ChemDoodleWeb.css" type="text/css">
+  <!-- Main Web Components library -->
+  <script src="ChemDoodleWeb.js"></script>
+  <!-- UI / sketcher plugin (name can vary by version) -->
+  <script src="ChemDoodleWeb-uis.js"></script>
+
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; background: #f4f5f7; }
+    .wrap { display: flex; gap: 16px; padding: 16px; box-sizing: border-box; }
+    .panel { background: white; border: 1px solid #d0d0d0; border-radius: 8px; padding: 12px; box-sizing: border-box; }
+    .left { width: 60%; min-width: 680px; }
+    .right { width: 40%; min-width: 420px; }
+    .toolbar, .atoms, .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; align-items: center; }
+    .toolbar button, .atoms button, .row button { padding: 8px 10px; cursor: pointer; }
+    #sketcher { width: 100%; height: 620px; border: 1px solid #bbb; border-radius: 4px; background: white; }
+    #preview { width: 100%; height: 620px; border: 1px solid #bbb; border-radius: 4px; display: block; background: white; }
+    input[type="number"] { width: 80px; padding: 6px; }
+    .note { margin-top: 8px; font-size: 13px; color: #555; line-height: 1.4; }
+    .active { background: #dbeafe; border-color: #60a5fa; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="panel left">
+
+      <div class="row">
+        <button id="btnBracketMode">Bracket mode</button>
+        <label>Charge on bracket:
+          <input id="chargeVal" type="number" value="0" />
+        </label>
+        <button id="btnApplyCharge">Apply charge</button>
+        <button id="btnSync">Sync preview</button>
+      </div>
+
+      <canvas id="sketcher"></canvas>
+      <div class="note">
+        Draw in the sketcher. For explicit positioning, click on the preview canvas in “atom mode” to add atoms at exact coordinates.
+      </div>
+    </div>
+
+    <div class="panel right">
+      <div class="toolbar">
+        <button id="btnAtomMode">Click-to-place atoms</button>
+        <button id="btnExportPNG">Export PNG</button>
+        <button id="btnClearPreview">Clear preview</button>
+      </div>
+      <canvas id="preview" width="900" height="620"></canvas>
+      <div class="note">
+        The preview canvas is the export surface. Brackets and charge are drawn here as overlays.
+      </div>
+    </div>
+  </div>
+
+<script>
+  const sketcher = new ChemDoodle.SketcherCanvas('sketcher', 900, 620, { useServices: false });
+  const preview = document.getElementById('preview');
+  const pctx = preview.getContext('2d');
+
+  let mode = 'draw';
+
+  sketcher.styles.bonds_lewisStyle_2D = false;
+  sketcher.styles.atoms_displayAllCarbonLabels_2D = true;
+  sketcher.styles.atoms_implicitHydrogens_2D = false;
+  sketcher.styles.bonds_length_2D = 100;
+  sketcher.repaint();
+
+  function drawBracketOverlay() {
+    const charge = parseInt(document.getElementById('chargeVal').value || '0', 10);
+    pctx.save();
+    pctx.strokeStyle = '#000';
+    pctx.lineWidth = 2;
+    pctx.beginPath();
+    pctx.moveTo(240, 170);
+    pctx.lineTo(220, 170);
+    pctx.lineTo(220, 430);
+    pctx.lineTo(240, 430);
+    pctx.moveTo(660, 170);
+    pctx.lineTo(680, 170);
+    pctx.lineTo(680, 430);
+    pctx.lineTo(660, 430);
+    pctx.stroke();
+
+    pctx.font = '24px Arial';
+    pctx.fillStyle = '#000';
+    const text = charge === 0 ? '0' : (charge > 0 ? '+' + charge : String(charge));
+    pctx.fillText(text, 690, 166);
+    pctx.restore();
+  }
+
+  function drawPreview() {
+    pctx.clearRect(0, 0, preview.width, preview.height);
+
+    const sketchCanvas = document.getElementById('sketcher');
+    if (!sketchCanvas || typeof sketchCanvas.toDataURL !== 'function') {
+      console.warn('Sketcher canvas not found or not a canvas element');
+      return;
+    }
+
+    const img = new Image();
+    img.onload = () => {
+      pctx.drawImage(img, 0, 0, preview.width, preview.height);
+      if (mode === 'bracket') {
+        drawBracketOverlay();
+      }
+    };
+    img.src = sketchCanvas.toDataURL('image/png');
+  }
+
+  drawPreview();
+
+  document.getElementById('btnBracketMode').onclick = () => {
+    mode = 'bracket';
+    drawPreview();
+  };
+
+  document.getElementById('btnApplyCharge').onclick = () => {
+    mode = 'bracket';
+    drawPreview();
+  };
+
+  document.getElementById('btnSync').onclick = () => {
+    drawPreview();
+  };
+
+  document.getElementById('btnAtomMode').onclick = () => {
+    mode = 'atomplace';
+    document.getElementById('btnAtomMode').classList.add('active');
+  };
+
+  document.getElementById('btnExportPNG').onclick = () => {
+    drawPreview();
+    setTimeout(() => {
+      const a = document.createElement('a');
+      a.download = 'lewis-structure.png';
+      a.href = preview.toDataURL('image/png');
+      a.click();
+    }, 150);
+  };
+
+  document.getElementById('btnClearPreview').onclick = () => {
+    pctx.clearRect(0, 0, preview.width, preview.height);
+  };
+
+  preview.addEventListener('click', (evt) => {
+    if (mode !== 'atomplace') return;
+    const rect = preview.getBoundingClientRect();
+    const x = evt.clientX - rect.left;
+    const y = evt.clientY - rect.top;
+
+    const mol = sketcher.getMolecule() || new ChemDoodle.structures.Molecule();
+    const newAtom = new ChemDoodle.structures.Atom('C', x, y);  // default C
+    mol.atoms.push(newAtom);
+    sketcher.loadMolecule(mol);
+    sketcher.repaint();
+    drawPreview();
+  });
+
+  sketcher.checksOnAction = function() {
+    drawPreview();
+    return true;
+  };
+</script>
+</body>
+</html>
